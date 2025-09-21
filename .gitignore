@@ -1,0 +1,12 @@
+**/target
+**/bin
+**/*.rs.bk
+**/*.log
+/*.html
+**/*.bin
+**/*.iml
+**/.idea
+.vscode
+.env
+**/.DS_Store
+tarballs
