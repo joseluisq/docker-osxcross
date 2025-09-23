@@ -1,6 +1,8 @@
 name: devel-docker
 on:
   pull_request:
+    branches:
+      - master
     paths:
       - Dockerfile
       - .github/workflows/devel.yml
@@ -15,13 +17,8 @@ env:
   DOCKER_IMAGE: localhost:5000/github.com/joseluisq/docker-osxcross
 
 jobs:
-  docker-debian:
-    name: Docker test (debian)
-    strategy:
-      matrix:
-        arch:
-          - linux/amd64
-          - linux/arm64
+  docker-amd64:
+    name: Docker test (amd64)
     runs-on: ubuntu-22.04
     services:
       registry:
@@ -39,18 +36,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: docker-osxcross-${{ matrix.arch }}-debian-buildx-${{ github.sha }}
+          key: docker-osxcross-amd64-buildx-${{ github.sha }}
           restore-keys: |
-            docker-osxcross-${{ matrix.arch }}-debian-buildx-
+            docker-osxcross-amd64-buildx-
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       -
-        name: Docker meta debian
-        id: meta_debian
+        name: Docker meta
+        id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKER_IMAGE }}
+          flavor: |
+            latest=false
+            suffix=-amd64
           tags: |
             type=schedule
             type=ref,event=branch
@@ -69,11 +69,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ matrix.arch }}
-          file: Dockerfile
+          platforms: linux/amd64
+          file: docker/amd64/Dockerfile
           load: true
-          tags: ${{ steps.meta_debian.outputs.tags }}
-          labels: ${{ steps.meta_debian.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=0.0.0
       -
@@ -81,11 +81,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ matrix.arch }}
-          file: Dockerfile
+          platforms: linux/amd64
+          file: docker/amd64/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta_debian.outputs.tags }}
-          labels: ${{ steps.meta_debian.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=0.0.0
           cache-from: type=local,src=/tmp/.buildx-cache
@@ -93,12 +93,116 @@ jobs:
       -
         name: Inspect image
         run: |
-          docker image inspect ${{ env.DOCKER_IMAGE }}:${{ steps.meta_debian.outputs.version }}
+          docker image inspect ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
       -
         name: Check manifest
         if: github.event_name != 'pull_request'
         run: |
-          docker buildx imagetools inspect ${{ env.DOCKER_IMAGE }}:${{ steps.meta_debian.outputs.version }}
+          docker buildx imagetools inspect ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
+      -
+        name: Run tests
+        uses: addnab/docker-run-action@v3
+        with:
+            image: ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
+            run: |
+              cat /etc/debian_version
+              osxcross
+              echo "OSX_SDK_VERSION=$OSX_SDK_VERSION"
+              echo "OSX_SDK_SUM=$OSX_SDK_SUM"
+              echo "OSX_VERSION_MIN=$OSX_VERSION_MIN"
+              echo "OSX_CROSS_COMMIT=$OSX_CROSS_COMMIT"
+      -
+        # Temp fix
+        # https://github.com/docker/build-push-action/issues/252
+        # https://github.com/moby/buildkit/issues/1896
+        name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  docker-arm64:
+    name: Docker test (arm64)
+    runs-on: ubuntu-22.04-arm
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      -
+        name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: docker-osxcross-arm64-buildx-${{ github.sha }}
+          restore-keys: |
+            docker-osxcross-arm64-buildx-
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          flavor: |
+            latest=false
+            suffix=-arm64
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+      -
+        name: Build and export to Docker client
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          file: docker/arm64/Dockerfile
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=0.0.0
+      -
+        name: Build and push to local registry
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          file: docker/arm64/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=0.0.0
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+      
+      -
+        name: Inspect image
+        run: |
+          docker image inspect ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
+      -
+        name: Check manifest
+        if: github.event_name != 'pull_request'
+        run: |
+          docker buildx imagetools inspect ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
       -
         # Temp fix
         # https://github.com/docker/build-push-action/issues/252

@@ -4,7 +4,7 @@ ARG VERSION=0.0.0
 ENV VERSION=${VERSION}
 
 LABEL version="${VERSION}" \
-    description="Use same Docker image for compiling Rust programs for Linux (musl libc) & macOS (osxcross)." \
+    description="Linux AMD64 Docker image for osxcross" \
     maintainer="Jose Quintana <joseluisq.net>"
 
 RUN set -eux \

@@ -1,4 +1,4 @@
-name: release-docker
+name: release
 on:
   push:
     tags:
@@ -6,32 +6,111 @@ on:
     - 'v1.0.[0-9]+-beta.[0-9]+'
 
 jobs:
-  docker-image-debian:
+  build-amd64:
+    name: osxcross (amd64)
     runs-on: ubuntu-22.04
     steps:
       -
-        name: Checkout repository
+        name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       -
-        name: Docker meta debian
-        id: meta_debian
+        name: Docker meta
+        id: meta-amd64
         uses: docker/metadata-action@v5
         with:
-          images: |
-            joseluisq/docker-osxcross
-            ghcr.io/joseluisq/docker-osxcross
+          images: joseluisq/docker-osxcross
+          flavor: |
+            latest=true
+            suffix=-amd64
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}}-amd64
+            type=semver,pattern={{major}}.{{minor}}-amd64
+            type=semver,pattern={{major}}-amd64
       -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v3 
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          provenance: false
+          context: .
+          platforms: linux/amd64
+          file: ./docker/amd64/Dockerfile
+          tags: ${{ steps.meta-amd64.outputs.tags }}
+
+  build-arm64:
+    name: osxcross (arm64)
+    runs-on: ubuntu-22.04-arm
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Docker meta
+        id: meta-arm64
+        uses: docker/metadata-action@v5
+        with:
+          images: joseluisq/docker-osxcross
+          flavor: |
+            latest=true
+            suffix=-arm64
+          tags: |
+            type=semver,pattern={{version}}-arm64
+            type=semver,pattern={{major}}.{{minor}}-arm64
+            type=semver,pattern={{major}}-arm64
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v3 
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          provenance: false
+          context: .
+          platforms: linux/arm64
+          file: ./docker/arm64/Dockerfile
+          tags: ${{ steps.meta-arm64.outputs.tags }}
+
+  manifest:
+    needs:
+      - build-amd64
+      - build-arm64
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Set envs
+        run: |
+          github_ref=${GITHUB_REF#refs/tags/}
+          SEMVER=${github_ref##*v}
+          SEMVER=${SEMVER}
+          SEMVER_MAJOR=${SEMVER%.*.*}
+          SEMVER_MINOR=${SEMVER%*}
+          echo "SEMVER=${SEMVER}" >> $GITHUB_ENV
+          echo "SEMVER_MAJOR=${SEMVER_MAJOR}" >> $GITHUB_ENV
+          echo "SEMVER_MINOR=${SEMVER_MINOR}" >> $GITHUB_ENV
+          echo $SEMVER
+          echo $SEMVER_MAJOR
+          echo $SEMVER_MINOR
       -
         name: Login to DockerHub
         uses: docker/login-action@v3
@@ -39,25 +118,39 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
-        name: Login to ghcr.io
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      -
-        name: Prepare Docker envs
-        shell: bash
+        name: Push semver minor alias
         run: |
-          echo "VERSION=${GITHUB_REF##*/v}" >> $GITHUB_ENV
+          docker manifest create \
+            joseluisq/docker-osxcross:$SEMVER_MINOR \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-amd64 \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-arm64
+          docker manifest push joseluisq/docker-osxcross:$SEMVER_MINOR
       -
-        name: Build and push (debian)
-        uses: docker/build-push-action@v6
-        with:
-          push: true
-          context: .
-          platforms: linux/amd64,linux/arm64
-          file: ./Dockerfile
-          tags: ${{ steps.meta_debian.outputs.tags }}
-          build-args: |
-            VERSION=${{ env.VERSION }}
+        name: Push latest (1.0 or newer)
+        run: |
+          docker manifest create \
+            joseluisq/docker-osxcross:latest \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-amd64 \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-arm64
+          docker manifest push joseluisq/docker-osxcross:latest
+      -
+        name: Pull all images
+        run: |
+          docker pull joseluisq/docker-osxcross:$SEMVER_MINOR-amd64
+          docker pull joseluisq/docker-osxcross:$SEMVER_MINOR-arm64
+      -
+        name: Push semver alias
+        run: |
+          docker manifest create \
+            joseluisq/docker-osxcross:$SEMVER \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-amd64 \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-arm64
+          docker manifest push joseluisq/docker-osxcross:$SEMVER
+      -
+        name: Push semver major alias (1.0 or newer)
+        run: |
+          docker manifest create \
+            joseluisq/docker-osxcross:$SEMVER_MAJOR \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-amd64 \
+              --amend joseluisq/docker-osxcross:$SEMVER_MINOR-arm64
+          docker manifest push joseluisq/docker-osxcross:$SEMVER_MAJOR
