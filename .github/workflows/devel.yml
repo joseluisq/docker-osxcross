@@ -1,17 +1,17 @@
-name: devel-docker
+name: devel
 on:
   pull_request:
     branches:
       - master
     paths:
-      - Dockerfile
-      - .github/workflows/devel.yml
+      - docker/**
+      - .github/workflows/*.yml
   push:
     branches:
       - master
     paths:
-      - Dockerfile
-      - .github/workflows/devel.yml
+      - docker/**
+      - .github/workflows/*.yml
 
 env:
   DOCKER_IMAGE: localhost:5000/github.com/joseluisq/docker-osxcross
@@ -103,9 +103,12 @@ jobs:
         name: Run tests
         uses: addnab/docker-run-action@v3
         with:
-            image: ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
+            image: "${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}"
+            shell: bash
             run: |
+              set -eux
               cat /etc/debian_version
+              uname -a
               osxcross
               echo "OSX_SDK_VERSION=$OSX_SDK_VERSION"
               echo "OSX_SDK_SUM=$OSX_SDK_SUM"
@@ -203,6 +206,26 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           docker buildx imagetools inspect ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
+      -
+        name: Run tests
+        uses: addnab/docker-run-action@v3
+        with:
+            image: "${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}"
+            shell: bash
+            run: |
+              set -eux
+              cat /etc/debian_version
+              uname -a
+              osxcross
+              echo "OSX_SDK_VERSION=$OSX_SDK_VERSION"
+              echo "OSX_SDK_SUM=$OSX_SDK_SUM"
+              echo "OSX_VERSION_MIN=$OSX_VERSION_MIN"
+              echo "OSX_CROSS_COMMIT=$OSX_CROSS_COMMIT"
+              echo "PATH=$PATH"
+              echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"
+              echo "OSXCROSS_MACPORTS_MIRROR=$OSXCROSS_MACPORTS_MIRROR"
+              echo "OSXCROSS_MACPORTS_LOCAL=$OSXCROSS_MACPORTS_LOCAL"
+              echo "OSXCROSS_MACPORTS_LIBEXEC=$OSXCROSS_MACPORTS_LIBEXEC"
       -
         # Temp fix
         # https://github.com/docker/build-push-action/issues/252

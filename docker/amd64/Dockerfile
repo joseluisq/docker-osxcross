@@ -5,7 +5,13 @@ ENV VERSION=${VERSION}
 
 LABEL version="${VERSION}" \
     description="Linux AMD64 Docker image for osxcross" \
-    maintainer="Jose Quintana <joseluisq.net>"
+    maintainer="Jose Quintana <joseluisq.net>"\
+    org.opencontainers.image.vendor="Jose Quintana" \
+    org.opencontainers.image.url="https://github.com/joseluisq/docker-osxcross" \
+    org.opencontainers.image.title="Docker OSXCross" \
+    org.opencontainers.image.description="Linux AMD64 Docker image for osxcross." \
+    org.opencontainers.image.version="${VERSION}" \
+    org.opencontainers.image.documentation="https://github.com/joseluisq/docker-osxcross"
 
 RUN set -eux \
     && dpkg --add-architecture arm64 \
@@ -60,11 +66,15 @@ ENV PKG_CONFIG_ALLOW_CROSS=true \
 WORKDIR /usr/local/osxcross
 
 ARG OSX_SDK_VERSION=13.3
+ENV OSX_SDK_VERSION=$OSX_SDK_VERSION
 ARG OSX_SDK_SUM=518e35eae6039b3f64e8025f4525c1c43786cc5cf39459d609852faf091e34be
+ENV OSX_SDK_SUM=$OSX_SDK_SUM
 ARG OSX_VERSION_MIN=10.14
+ENV OSX_VERSION_MIN=$OSX_VERSION_MIN
 
 # OS X Cross - https://github.com/tpoechtrager/osxcross
 ARG OSX_CROSS_COMMIT=f873f534c6cdb0776e457af8c7513da1e02abe59
+ENV OSX_CROSS_COMMIT=$OSX_CROSS_COMMIT
 
 # Install OS X Cross
 # A Mac OS X cross toolchain for Linux, FreeBSD, OpenBSD and Android
