@@ -1,12 +1,11 @@
 REPOSITORY ?= joseluisq
 TAG ?= latest
 
-
 build:
 	docker build \
 		-t $(REPOSITORY)/docker-osxcross:$(TAG) \
 		--network=host \
-		-f Dockerfile .
+		-f docker/amd64/Dockerfile .
 .PHONY: build
 
 # Use to build both arm64 and amd64 images at the same time.
@@ -20,7 +19,7 @@ buildx:
 		--platform linux/amd64,linux/arm64 \
 		--push \
 		-t $(REPOSITORY)/docker-osxcross:$(TAG) \
-		-f Dockerfile .
+		-f docker/amd64/Dockerfile .
 
 .PHONY: buildx
 

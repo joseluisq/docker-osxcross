@@ -1,17 +1,18 @@
-FROM debian:13.1-slim
-
 ARG VERSION=0.0.0
-ENV VERSION=${VERSION}
+ARG OSX_SDK_VERSION=13.3
+ARG OSX_SDK_SUM=518e35eae6039b3f64e8025f4525c1c43786cc5cf39459d609852faf091e34be
+ARG OSX_VERSION_MIN=10.14
+ARG OSX_CROSS_COMMIT=f873f534c6cdb0776e457af8c7513da1e02abe59
 
-LABEL version="${VERSION}" \
-    description="Linux AMD64 Docker image for osxcross" \
-    maintainer="Jose Quintana <joseluisq.net>"\
-    org.opencontainers.image.vendor="Jose Quintana" \
-    org.opencontainers.image.url="https://github.com/joseluisq/docker-osxcross" \
-    org.opencontainers.image.title="Docker OSXCross" \
-    org.opencontainers.image.description="Linux AMD64 Docker image for osxcross." \
-    org.opencontainers.image.version="${VERSION}" \
-    org.opencontainers.image.documentation="https://github.com/joseluisq/docker-osxcross"
+FROM debian:13.1-slim AS builder
+
+ARG VERSION
+ARG OSX_SDK_VERSION
+ARG OSX_SDK_SUM
+ARG OSX_VERSION_MIN
+ARG OSX_CROSS_COMMIT
+
+WORKDIR /usr/local/osxcross
 
 RUN set -eux \
     && dpkg --add-architecture arm64 \
@@ -26,109 +27,78 @@ RUN set -eux \
         cmake \
         curl \
         file \
-        flex \
-        g++-aarch64-linux-gnu \
-        gcc-aarch64-linux-gnu \
         git \
         libbz2-dev \
-        libgmp-dev \
-        libicu-dev \
-        libmpc-dev \
-        libmpfr-dev \
-        libpq-dev \
-        libsqlite3-dev \
         libssl-dev \
-        libtool \
         libxml2-dev \
-        linux-libc-dev \
-        llvm-dev \
-        musl-dev \
-        musl-dev:arm64 \
-        musl-tools \
-        patch \
         pkgconf \
         python3 \
         xutils-dev \
         xz-utils \
-        yasm \
         zlib1g-dev \
-    # Clean up local repository of retrieved packages and remove the package lists
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && true
 
-# pkg-config related environment variables
-ENV PKG_CONFIG_ALLOW_CROSS=true \
-    PKG_CONFIG_ALL_STATIC=true
-
-    
-# Mac OS X SDK version - https://github.com/joseluisq/macosx-sdks
-WORKDIR /usr/local/osxcross
-
-ARG OSX_SDK_VERSION=13.3
-ENV OSX_SDK_VERSION=$OSX_SDK_VERSION
-ARG OSX_SDK_SUM=518e35eae6039b3f64e8025f4525c1c43786cc5cf39459d609852faf091e34be
-ENV OSX_SDK_SUM=$OSX_SDK_SUM
-ARG OSX_VERSION_MIN=10.14
-ENV OSX_VERSION_MIN=$OSX_VERSION_MIN
-
-# OS X Cross - https://github.com/tpoechtrager/osxcross
-ARG OSX_CROSS_COMMIT=f873f534c6cdb0776e457af8c7513da1e02abe59
-ENV OSX_CROSS_COMMIT=$OSX_CROSS_COMMIT
-
-# Install OS X Cross
-# A Mac OS X cross toolchain for Linux, FreeBSD, OpenBSD and Android
 RUN set -eux \
     && echo "Cloning osxcross..." \
-    && git clone https://github.com/tpoechtrager/osxcross.git /usr/local/osxcross \
+    && git clone --depth 10 --branch master https://github.com/tpoechtrager/osxcross.git /usr/local/osxcross \
     && git checkout -q "${OSX_CROSS_COMMIT}" \
     && rm -rf ./.git \
     && true
 
 RUN set -eux \
-    && echo "Building osxcross with ${OSX_SDK_VERSION}..." \
-    && curl -Lo "./tarballs/MacOSX${OSX_SDK_VERSION}.sdk.tar.xz" \
+    && curl -sSL -o "./tarballs/MacOSX${OSX_SDK_VERSION}.sdk.tar.xz" \
         "https://github.com/joseluisq/macosx-sdks/releases/download/${OSX_SDK_VERSION}/MacOSX${OSX_SDK_VERSION}.sdk.tar.xz" \
-    && echo "${OSX_SDK_SUM}  ./tarballs/MacOSX${OSX_SDK_VERSION}.sdk.tar.xz" \
-        | sha256sum -c - \
+    && echo "${OSX_SDK_SUM}  ./tarballs/MacOSX${OSX_SDK_VERSION}.sdk.tar.xz" | sha256sum -c - \
     && UNATTENDED=yes OSX_VERSION_MIN=${OSX_VERSION_MIN} ./build.sh \
-    && rm -rf *~ taballs *.tar.xz \
-    && rm -rf /tmp/* \
+    && cd /usr/local/osxcross/build/apple-libtapi/src/llvm \
+    && rm -rf benchmarks examples unittests \
+    && rm -rf ./tarballs *.tar.xz /tmp/* \
     && true
 
-# Build osxcross compiler-rt
+# compiler-rt can be needed to build code using `__builtin_available()`
 RUN set -eux \
     && cd /usr/local/osxcross \
     && echo "Building osxcross with compiler-rt..." \
-    # compiler-rt can be needed to build code using `__builtin_available()`
     && env DISABLE_PARALLEL_ARCH_BUILD=1 ./build_compiler_rt.sh \
+    && cd /usr/local/osxcross/build/compiler-rt/llvm \
+    && rm -rf test unittests benchmarks examples docs \
+    && cd /usr/local/osxcross/build/compiler-rt/clang \
+    && rm -rf test unittests docs examples \
+    && rm -rf /tmp/* \
     && true
 
-# osxcross related environment variables
+ENV VERSION=$VERSION
+ENV OSX_SDK_VERSION=$OSX_SDK_VERSION
+ENV OSX_SDK_SUM=$OSX_SDK_SUM
+ENV OSX_VERSION_MIN=$OSX_VERSION_MIN
+ENV OSX_CROSS_COMMIT=$OSX_CROSS_COMMIT
+
 ENV PATH=$PATH:/usr/local/osxcross/target/bin
 ENV MACOSX_DEPLOYMENT_TARGET=${OSX_VERSION_MIN}
 ENV OSXCROSS_MACPORTS_MIRROR=https://packages.macports.org
 ENV OSXCROSS_MACPORTS_LOCAL=/usr/local/osxcross/target/macports/pkgs/opt/local
 ENV OSXCROSS_MACPORTS_LIBEXEC=${OSXCROSS_MACPORTS_LOCAL}/libexec
 
-# Test osxcross compiler-rt
+ENV PKG_CONFIG_ALLOW_CROSS=true
+ENV PKG_CONFIG_ALL_STATIC=true
+
 RUN set -eux \
     && echo "Testing osxcross with compiler-rt..." \
     && echo "int main(void){return 0;}" | xcrun clang -xc -o/dev/null -v - 2>&1 | grep "libclang_rt" 1>/dev/null \
-    && echo "compiler-rt installed and working successfully!" \
+    && echo "compiler-rt installed and woking successfully!" \
     && true
 
-RUN set -eux \
-    && echo "Install dependencies via osxcross tools..." \
-    && apt-get update \
-    && /usr/local/osxcross/tools/get_dependencies.sh \
-    && true
-
-RUN set -eux \
-    && echo "Removing temp files..." \
-    && rm -rf *~ taballs *.tar.xz \
-    && rm -rf /tmp/* \
-    && true
+LABEL version="${VERSION}" \
+    description="Linux AMD64 Docker image for osxcross" \
+    maintainer="Jose Quintana <joseluisq.net>"\
+    org.opencontainers.image.vendor="Jose Quintana" \
+    org.opencontainers.image.url="https://github.com/joseluisq/docker-osxcross" \
+    org.opencontainers.image.title="Docker OSXCross" \
+    org.opencontainers.image.description="Linux AMD64 Docker image for osxcross." \
+    org.opencontainers.image.version="${VERSION}" \
+    org.opencontainers.image.documentation="https://github.com/joseluisq/docker-osxcross"
 
 WORKDIR /root/src
 
